@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-agent-daemon
+  namespace: ioi-system
+spec:
+  selector:
+    matchLabels:
+      app: node-agent
+  template:
+    metadata:
+      labels:
+        app: node-agent
+    spec:
+      hostPID: true
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      automountServiceAccountToken: false
+      containers:
+        - name: node-agent
+          image: ioisolation/node-agent:dev-final
+          imagePullPolicy: IfNotPresent
+          args:
+            - --v=2
+          securityContext:
+            privileged: true
+          env:
+            - name: KUBECONFIG
+              value: /kubeconfig/config
+            - name: Node_Name
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: Node_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: Pod_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          volumeMounts:
+            - name: kubeconfig
+              mountPath: /kubeconfig
+              readOnly: true
+            - name: dev-dir
+              mountPath: /dev
+            - name: host-cgroup
+              mountPath: /sys/fs/cgroup
+            - name: host-proc
+              mountPath: /proc
+            - name: var-run-netns
+              mountPath: /var/run/netns
+      volumes:
+        - name: kubeconfig
+          hostPath:
+            path: /home/cindyli/.kube
+            type: Directory
+        - name: dev-dir
+          hostPath:
+            path: /dev
+            type: Directory
+        - name: host-cgroup
+          hostPath:
+            path: /sys/fs/cgroup
+            type: Directory
+        - name: host-proc
+          hostPath:
+            path: /proc
+            type: Directory
+        - name: var-run-netns
+          hostPath:
+            path: /var/run/netns
+            type: DirectoryOrCreate

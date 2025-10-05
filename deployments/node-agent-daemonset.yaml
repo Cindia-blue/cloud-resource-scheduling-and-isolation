@@ -23,7 +23,7 @@ spec:
       automountServiceAccountToken: true
       initContainers:
       - name: init-service
-        image: INIT_SERVICE_IMAGE
+        image: docker.io/ioisolation/init-service:release-v0.8.0
         imagePullPolicy: Always
         volumeMounts:
         - name: dbus-socket
@@ -103,7 +103,7 @@ spec:
             name: registration-dir
 
         - name: node-agent
-          image: NODEAGENT_IMAGE
+          image: docker.io/ioisolation/node-agent:release-v0.8.0
           imagePullPolicy: IfNotPresent
           args:
             - --v=2

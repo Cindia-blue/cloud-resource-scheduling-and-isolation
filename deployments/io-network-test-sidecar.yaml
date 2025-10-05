@@ -1,0 +1,79 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: io-network-test
+  namespace: ioi-system
+spec:
+  hostPID: true
+  hostNetwork: true
+  containers:
+    - name: io-tester
+      image: ioisolation/io-test:dev-fixed
+      resources:
+        requests:
+          cpu: "500m"
+          memory: "256Mi"
+          io/disk.mbps: "20"
+          io/network.mbps: "10"
+        limits:
+          cpu: "500m"
+          memory: "256Mi"
+          io/disk.mbps: "20"
+          io/network.mbps: "10"
+      volumeMounts:
+        - mountPath: /tmp
+          name: tmp-storage
+    - name: ebpf-agent
+      image: localhost/pinc-ebpf-agent:local-1759624636
+      imagePullPolicy: IfNotPresent
+      securityContext:
+        privileged: true
+      env:
+        - name: ZIPKIN_URL
+          value: "http://10.9.220.244:9411/api/v2/spans"
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: ZIPKIN_URL
+          value: "http://10.9.220.244:9411/api/v2/spans"
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+      volumeMounts:
+        - name: sys
+          mountPath: /sys
+          readOnly: true
+        - name: proc
+          mountPath: /proc
+          readOnly: true
+        - name: kubeconfig
+          mountPath: /root/.kube/config
+          readOnly: true
+  volumes:
+    - name: tmp-storage
+      emptyDir: {}
+    - name: sys
+      hostPath:
+        path: /sys
+        type: Directory
+    - name: proc
+      hostPath:
+        path: /proc
+        type: Directory
+    - name: kubeconfig
+      hostPath:
+        path: /home/cindyli/.kube/config
+        type: File

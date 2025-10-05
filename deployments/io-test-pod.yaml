@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: io-network-test
+  namespace: ioi-system
+spec:
+  containers:
+    - name: io-tester
+      image: docker.io/library/io-test:latest
+      resources:
+        requests:
+          cpu: "500m"
+          memory: "256Mi"
+          io/disk.mbps: "20"
+          io/network.mbps: "10"
+        limits:
+          cpu: "500m"
+          memory: "256Mi"
+          io/disk.mbps: "20"
+          io/network.mbps: "10"
+      volumeMounts:
+        - mountPath: /tmp
+          name: tmp-storage
+  volumes:
+    - name: tmp-storage
+      emptyDir: {}

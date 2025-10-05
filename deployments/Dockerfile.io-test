@@ -1,0 +1,10 @@
+FROM ubuntu:22.04
+
+RUN apt-get update && \
+    apt-get install -y fio iperf3 curl iputils-ping tcpdump && \
+    apt-get clean
+
+WORKDIR /workspace
+COPY run.sh /workspace/run.sh
+
+ENTRYPOINT ["bash", "/workspace/run.sh"]
