@@ -82,7 +82,7 @@ spec:
             name: registration-dir
 
         - name: localstorage
-          image: CSI_IMAGE
+          image: docker.io/ioisolation/localstorage-csi:release-v0.8.0
           imagePullPolicy: IfNotPresent
           args:
             - --v=2

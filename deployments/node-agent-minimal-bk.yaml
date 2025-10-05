@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-agent-daemon
+  namespace: ioi-system
+spec:
+  selector:
+    matchLabels:
+      app: node-agent
+  template:
+    metadata:
+      labels:
+        app: node-agent
+    spec:
+      hostPID: true
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      serviceAccountName: node-agent
+      containers:
+        - name: node-agent
+          image: ioisolation/node-agent:dev-final
+          imagePullPolicy: IfNotPresent
+          args:
+            - --v=2
+            - --kubeconfig=/etc/kubernetes/kubelet.conf
+          securityContext:
+            privileged: true
+          ports:
+            - containerPort: 8080
+              name: metrics-port
+            - containerPort: 8997
+              name: aggregator-port
+          env:
+            - name: KUBECONFIG
+              value: /etc/kubernetes/kubelet.conf
+            - name: Node_Name
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: Node_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: Pod_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          volumeMounts:
+            - name: dev-dir
+              mountPath: /dev
+            - name: host-cgroup-root
+              mountPath: /sys/fs/cgroup
+            - name: host-proc
+              mountPath: /proc
+            - name: var-run-netns
+              mountPath: /var/run/netns
+            - name: kubeconfig
+              mountPath: /etc/kubernetes
+              readOnly: true
+      volumes:
+        - name: dev-dir
+          hostPath:
+            path: /dev
+            type: Directory
+        - name: host-cgroup-root
+          hostPath:
+            path: /sys/fs/cgroup
+            type: Directory
+        - name: host-proc
+          hostPath:
+            path: /proc
+            type: Directory
+        - name: var-run-netns
+          hostPath:
+            path: /var/run/netns
+            type: DirectoryOrCreate
+        - name: kubeconfig
+          hostPath:
+            path: /etc/kubernetes
+            type: Directory

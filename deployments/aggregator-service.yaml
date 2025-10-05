@@ -34,7 +34,7 @@ spec:
 
       containers:
         - name: aggregator
-          image: AGGREGATOR_IMAGE
+          image: docker.io/ioisolation/aggregator:release-v0.8.0
           imagePullPolicy: IfNotPresent
           args:
           - --v=2

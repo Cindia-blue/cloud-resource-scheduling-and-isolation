@@ -18,7 +18,7 @@ spec:
     - --leader-elect=true
     - --v=2
     - --config=/etc/kubernetes/sched-cc.yaml
-    image: SCHED_IMAGE
+    image: docker.io/ioisolation/kube-scheduler:release-v0.8.0
     imagePullPolicy: IfNotPresent
     livenessProbe:
       failureThreshold: 8
