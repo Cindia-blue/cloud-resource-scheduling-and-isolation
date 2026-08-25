@@ -1171,7 +1171,7 @@ func TestDiskEngine_SetAppLimit(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "test3",
+			name: "io.max enforcement hard-disabled for Cindy1 NOP PoC",
 			fields: fields{
 				Apps: map[string]*AppInfo{
 					"case": {
@@ -1191,7 +1191,7 @@ func TestDiskEngine_SetAppLimit(t *testing.T) {
 					},
 				},
 			},
-			wantErr: false,
+			wantErr: true,
 		},
 	}
 	for _, tt := range tests {

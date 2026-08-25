@@ -235,59 +235,10 @@ func (d *DiskEngine) Configure(ctx context.Context, req *pb.ConfigureRequest) (*
 }
 
 func (s *DiskEngine) SetAppLimit(ctx context.Context, req *pb.SetAppLimitRequest) (*pb.SetAppLimitResponse, error) {
-	//TODO: Need to avoid overwrite another disk when pod has multiple disks
-	klog.V(utils.DBG).Infof("Now start to SetAppLimit. req = %v", req)
-
-	appid := strings.Split(req.AppId, ".")
-	if len(appid) <= 1 {
-		return nil, errors.New("disk not support group limit")
-	}
-	if app, OK := s.Apps[appid[1]]; OK {
-		// set the limit via cgroup -- AppId is the cgroup path
-		values := ""
-		for _, limit := range req.Limit {
-			if (limit.In != "" && limit.In != "0") || (limit.Out != "" && limit.Out != "0") {
-				values += fmt.Sprintf("%s ", limit.Id)
-				if limit.In != "" && limit.In != "0" {
-					values += fmt.Sprintf("rbps=%s ", limit.In)
-					values += fmt.Sprintf("riops=%d ", limit.InIops)
-				}
-
-				if limit.Out != "" && limit.Out != "0" {
-					values += fmt.Sprintf("wbps=%s ", limit.Out)
-					values += fmt.Sprintf("wiops=%d ", limit.OutIops)
-				}
-			}
-			values += "\n"
-		}
-		values = values[:len(values)-1]
-		klog.V(utils.DBG).Info(values)
-		if values != "" {
-			max := "/io.max"
-			path := fmt.Sprintf("%s%s", app.CgroupPath, max)
-			klog.V(utils.DBG).Info(path)
-			_, err := os.ReadFile(path)
-			if err != nil {
-				klog.V(utils.INF).Info("It does not exist this path: ", path)
-				return &pb.SetAppLimitResponse{}, nil
-			}
-			klog.V(utils.DBG).Info("writeFile")
-			err = os.WriteFile(path, []byte(values), 0666)
-			if err != nil {
-				klog.V(utils.INF).Infof("write failed: %s", err)
-				return nil, err
-			} else {
-				klog.V(utils.INF).Infof("This AppLimit is set: %s", app.AppName)
-				klog.V(utils.INF).Infof("The limit value is: %s", values)
-				return &pb.SetAppLimitResponse{}, nil
-			}
-		} else {
-			klog.V(utils.INF).Info("no value to be written to io.max!\n")
-			return &pb.SetAppLimitResponse{}, nil
-		}
-	} else {
-		return nil, errors.New("app not registered")
-	}
+	// Cindy1 NOP PoC: io.max enforcement is out of scope (IOCost/io.weight only,
+	// see pkg/iocostintent). Hard-disabled at this syscall boundary so no upstream
+	// caller (agent/common workload allocation, admin.go, etc.) can ever reach it.
+	return nil, status.Error(codes.Unimplemented, "io.max enforcement is disabled in the Cindy1 NOP IOCost PoC; use pkg/iocostintent io.weight path")
 }
 
 func parseDiskAppkString(mockString string) (utils.DiskCgroupInfo, error) {
