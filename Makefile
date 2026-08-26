@@ -87,6 +87,10 @@ iocost-adapter:
 	@mkdir -p bin
 	$(GO_CMD) build -o bin $(GOFLAGS) ./cmd/iocost-adapter
 
+render-target:
+	@mkdir -p bin
+	$(GO_CMD) build -o bin $(GOFLAGS) ./cmd/render-target
+
 tool:
 	@mkdir -p bin
 	$(GO_CMD) build -o bin/kubectl-diskio $(GOFLAGS) ./cmd/kubectl-diskio
