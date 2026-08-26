@@ -223,7 +223,7 @@ func newKubeletStub() (KubeletStub, error) {
 		scheme = HTTPSScheme
 		port = KubeletHttpsPort
 	}
-	nodeName := os.Getenv("Node_Name")
+	nodeName := os.Getenv("NODE_NAME")
 	return NewKubeletStub(nodeName, port, scheme, 30*time.Second)
 }
 

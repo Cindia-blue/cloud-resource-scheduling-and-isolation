@@ -53,7 +53,7 @@ func (e *AdminEngine) Initialize(coreClient *kubernetes.Clientset, client *versi
 	klog.Info("3.3 initializing the admin engine")
 	eventMap = make(map[interface{}]uint64)
 	go ServiceClientTHandler(agent.ClientHandlerChan)
-	e.NodeName = os.Getenv("Node_Name")
+	e.NodeName = os.Getenv("NODE_NAME")
 	e.StartAdminConfig()
 
 	return nil

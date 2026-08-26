@@ -42,11 +42,15 @@ func TestBuildPlanUsesOnlyIOWeight(t *testing.T) {
 	}
 }
 
-func TestRejectsEqualWeights(t *testing.T) {
+func TestAllowsEqualWeightsForSymmetricControlCell(t *testing.T) {
 	intent := validIntent()
 	intent.CompetingWeight = intent.ProtectedWeight
-	if err := Validate(intent); err == nil {
-		t.Fatal("expected rejection")
+	plan, err := BuildPlan(intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Treatment[0].Value != plan.Treatment[1].Value {
+		t.Fatalf("symmetric plan is not symmetric: %+v", plan.Treatment)
 	}
 }
 

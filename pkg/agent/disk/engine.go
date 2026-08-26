@@ -164,7 +164,7 @@ func (e *DiskEngine) StartAnalyzeDiskProfiler() {
 func StartDiskProfiler(disksInput map[string][]string) {
 	// get disk info from svc client - server
 	klog.V(utils.INF).Infof("0.StartDiskProfiler disksInput %+v", disksInput)
-	NodeName := os.Getenv("Node_Name")
+	NodeName := os.Getenv("NODE_NAME")
 	disks := []common.DiskInput{}
 	for _, dk := range disksInput[NodeName] {
 		disks = append(disks, common.DiskInput{DiskName: dk})

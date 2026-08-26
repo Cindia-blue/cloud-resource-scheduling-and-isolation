@@ -1,4 +1,4 @@
-.PHONY: build test
+.PHONY: build test iocost-adapter
 .FORCE:
 
 DEBUG ?= 0
@@ -82,6 +82,10 @@ init-service:
 ioi-service:
 	@mkdir -p bin
 	$(GO_CMD) build -o bin $(GOFLAGS) ./cmd/ioi-service
+
+iocost-adapter:
+	@mkdir -p bin
+	$(GO_CMD) build -o bin $(GOFLAGS) ./cmd/iocost-adapter
 
 tool:
 	@mkdir -p bin

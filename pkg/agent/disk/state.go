@@ -139,7 +139,7 @@ func ProcessDeviceStatusChange(oldNodeInfo *v1.NodeStaticIOInfoStatus, newNodeIn
 			// NotEnabled --> Profiling
 			klog.V(utils.DBG).Infof("ProcessDeviceStatusChange: %s, %s", oldState.State, newState.State)
 			if oldState.State == utils.NotEnabled && newState.State == utils.Profiling {
-				NodeName := os.Getenv("Node_Name")
+				NodeName := os.Getenv("NODE_NAME")
 				devices[NodeName] = []string{newState.Name}
 				go StartDiskProfiler(devices)
 			}
@@ -199,7 +199,7 @@ func WatchDeviceStatus(client *versioned.Clientset) error {
 					klog.Errorf("cannot convert to *v1.NodeStaticIOInfo: %v", obj)
 					return false
 				}
-				NodeName := os.Getenv("Node_Name")
+				NodeName := os.Getenv("NODE_NAME")
 				if crStatus.Name != NodeName+"-nodestaticioinfo" {
 					return false
 				} else {

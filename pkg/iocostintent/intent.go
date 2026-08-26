@@ -80,9 +80,6 @@ func Validate(intent Intent) error {
 			return fmt.Errorf("%s weight %d outside cgroup-v2 range %d..%d", name, weight, MinWeight, MaxWeight)
 		}
 	}
-	if intent.ProtectedWeight == intent.CompetingWeight {
-		return fmt.Errorf("treatment weights are equal (%d)", intent.ProtectedWeight)
-	}
 	return nil
 }
 

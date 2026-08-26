@@ -265,7 +265,7 @@ func (c *Agent) Stop() error {
 }
 
 func (c *Agent) InitStaticCR() error {
-    NodeName := os.Getenv("Node_Name")
+    NodeName := os.Getenv("NODE_NAME")
     c.IOInfo.APIVersion = "ioi.intel.com/v1"
     c.IOInfo.Kind = "NodeStaticIOInfo"
     c.IOInfo.Name = NodeName + "-nodestaticioinfo"
@@ -337,7 +337,7 @@ func init() {
     }
 
     var node *v11.Node
-    name := os.Getenv("Node_Name")
+    name := os.Getenv("NODE_NAME")
     var sleepTime int64 = 0
     var retryTimes int64 = 0
     var maxSleepTime int64 = 60
