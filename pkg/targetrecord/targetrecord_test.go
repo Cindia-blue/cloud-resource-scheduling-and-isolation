@@ -130,6 +130,76 @@ func TestReconfirmDevice_RejectsPerformanceClassMismatch(t *testing.T) {
 	}
 }
 
+func testCluster() map[string]NodeInternalIdentity {
+	return map[string]NodeInternalIdentity{
+		"i-083d718a1260c191f": {NodeName: "i-083d718a1260c191f", InternalIP: "10.243.175.196", InternalDNS: "ip-10-243-175-196.ec2.internal"},
+		"i-0c20b0a3e32684a4c": {NodeName: "i-0c20b0a3e32684a4c", InternalIP: "10.243.180.152", InternalDNS: "ip-10-243-180-152.ec2.internal"},
+	}
+}
+
+// This is the corrected behavior: a CN using the node's own EC2-default
+// internal DNS name (not its Kubernetes Node name/instance ID) is valid --
+// requiring CN == instance ID specifically was the earlier over-strict
+// interpretation.
+func TestReconfirmCertificateCN_AcceptsSelfReferentialInternalDNSForm(t *testing.T) {
+	target := NodeInternalIdentity{NodeName: "i-083d718a1260c191f", InternalIP: "10.243.175.196", InternalDNS: "ip-10-243-175-196.ec2.internal"}
+	if err := ReconfirmCertificateCN(target, "ip-10-243-175-196.ec2.internal", testCluster()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReconfirmCertificateCN_AcceptsNodeNameForm(t *testing.T) {
+	target := NodeInternalIdentity{NodeName: "i-083d718a1260c191f", InternalIP: "10.243.175.196", InternalDNS: "ip-10-243-175-196.ec2.internal"}
+	if err := ReconfirmCertificateCN(target, "i-083d718a1260c191f", testCluster()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReconfirmCertificateCN_RejectsCrossNodeConfusion(t *testing.T) {
+	target := NodeInternalIdentity{NodeName: "i-083d718a1260c191f", InternalIP: "10.243.175.196", InternalDNS: "ip-10-243-175-196.ec2.internal"}
+	// This CN actually belongs to the OTHER node in the cluster map.
+	err := ReconfirmCertificateCN(target, "ip-10-243-180-152.ec2.internal", testCluster())
+	if err == nil {
+		t.Fatal("expected rejection of a CN that resolves to a different node")
+	}
+	if !strings.Contains(err.Error(), "cross-node") {
+		t.Fatalf("expected a cross-node-confusion error, got: %v", err)
+	}
+}
+
+func TestReconfirmCertificateCN_RejectsUnresolvedCN(t *testing.T) {
+	target := NodeInternalIdentity{NodeName: "i-083d718a1260c191f", InternalIP: "10.243.175.196", InternalDNS: "ip-10-243-175-196.ec2.internal"}
+	err := ReconfirmCertificateCN(target, "ip-10-99-99-99.ec2.internal", testCluster())
+	if err == nil {
+		t.Fatal("expected rejection of a CN that matches no known node")
+	}
+	if !strings.Contains(err.Error(), "unresolved") {
+		t.Fatalf("expected an unresolved error, got: %v", err)
+	}
+}
+
+func TestReconfirmCertificateCN_RejectsDuplicateMapping(t *testing.T) {
+	target := NodeInternalIdentity{NodeName: "i-083d718a1260c191f", InternalIP: "10.243.175.196", InternalDNS: "ip-10-243-175-196.ec2.internal"}
+	cluster := map[string]NodeInternalIdentity{
+		"i-083d718a1260c191f": target,
+		"i-duplicate":         {NodeName: "i-duplicate", InternalIP: "10.243.175.196", InternalDNS: "ip-10-243-175-196.ec2.internal"},
+	}
+	err := ReconfirmCertificateCN(target, "ip-10-243-175-196.ec2.internal", cluster)
+	if err == nil {
+		t.Fatal("expected rejection of a CN that resolves to more than one node")
+	}
+	if !strings.Contains(err.Error(), "duplicate") {
+		t.Fatalf("expected a duplicate/ambiguous error, got: %v", err)
+	}
+}
+
+func TestReconfirmCertificateCN_RejectsEmptyCN(t *testing.T) {
+	target := NodeInternalIdentity{NodeName: "i-083d718a1260c191f", InternalIP: "10.243.175.196", InternalDNS: "ip-10-243-175-196.ec2.internal"}
+	if err := ReconfirmCertificateCN(target, "", testCluster()); err == nil {
+		t.Fatal("expected rejection of an empty observed CN")
+	}
+}
+
 func TestRenderPlaceholders_SubstitutesAllFields(t *testing.T) {
 	tmpl := "node=__NODE_NAME__ device=__DEVICE_MAJMIN__ volume=__DATA_VOLUME_ID__"
 	out, err := RenderPlaceholders(tmpl, validRecord())

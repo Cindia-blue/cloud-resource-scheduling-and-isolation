@@ -156,6 +156,62 @@ func ReconfirmDevice(r Record, live LiveDeviceIdentity) error {
 	return nil
 }
 
+// NodeInternalIdentity is every hostname/IP form that may legitimately
+// appear as a kubelet serving certificate's CN/SAN for one Node: the
+// Kubernetes Node name (which on this fleet is the instance ID), and the
+// node's own internal IP and EC2-default internal DNS name (the
+// "ip-10-243-149-67.ec2.internal" form). A certificate CN is valid for a
+// node if it matches ANY of these three -- the Node name is not the only
+// legitimate form, and requiring CN == instance ID specifically was the
+// earlier over-strict interpretation.
+type NodeInternalIdentity struct {
+	NodeName    string
+	InternalIP  string
+	InternalDNS string
+}
+
+func (id NodeInternalIdentity) matches(cn string) bool {
+	return cn != "" && (cn == id.NodeName || cn == id.InternalIP || cn == id.InternalDNS)
+}
+
+// ReconfirmCertificateCN binds an observed certificate CN to one Node's
+// internal identity. It fails closed on exactly the cases that indicate a
+// real problem -- cross-node confusion (the CN belongs to a DIFFERENT known
+// node), an unresolved CN (it matches no node this caller knows about), or
+// a duplicate/ambiguous mapping (it matches more than one node) -- and
+// accepts a CN that resolves to the target node's own name, internal IP, or
+// internal DNS, in any combination. cluster must include the target node's
+// own identity (as target) plus every other node's identity the caller
+// wants checked for cross-node confusion; it is the caller's
+// responsibility to keep this fresh (see MaxAge).
+func ReconfirmCertificateCN(target NodeInternalIdentity, observedCN string, cluster map[string]NodeInternalIdentity) error {
+	if observedCN == "" {
+		return fmt.Errorf("observed certificate CN is empty")
+	}
+	if target.NodeName == "" {
+		return fmt.Errorf("target node identity is incomplete: NodeName is empty")
+	}
+
+	var matchedNodes []string
+	for name, id := range cluster {
+		if id.matches(observedCN) {
+			matchedNodes = append(matchedNodes, name)
+		}
+	}
+
+	switch len(matchedNodes) {
+	case 0:
+		return fmt.Errorf("certificate CN %q does not resolve to any known node identity (unresolved)", observedCN)
+	case 1:
+		if matchedNodes[0] != target.NodeName {
+			return fmt.Errorf("certificate CN %q belongs to node %s, not target node %s (cross-node identity confusion)", observedCN, matchedNodes[0], target.NodeName)
+		}
+		return nil
+	default:
+		return fmt.Errorf("certificate CN %q resolves to more than one node (%v): duplicate/ambiguous mapping", observedCN, matchedNodes)
+	}
+}
+
 // Placeholders returns the __KEY__ substitution map for RenderPlaceholders.
 func (r Record) Placeholders() map[string]string {
 	return map[string]string{
