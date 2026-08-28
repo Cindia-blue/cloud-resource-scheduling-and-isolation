@@ -86,33 +86,44 @@ workload cell on unqualified device state.
    whole runtime).
 4. Render and apply
    `deployments/iocost-adapter/experiment/app-symmetric-control.yaml.tmpl`
-   (with `{{ADAPTER_IMAGE}}` resolved to the same digest used for the
-   adapter Pod, so the `gate-wait` initContainer described below comes
-   from the exact same build) **immediately after** the adapter and
-   device state are ready.
-5. Wait for both Pods to reach `Running`. **You do not need to manually
-   open the workload-start gate.** Each Pod's `gate-wait` initContainer
-   (`cmd/gate-wait`) is a code-enforced barrier, not an operator
-   convention: it independently polls the local cgroup filesystem —
-   never the adapter process, never its logs — until it proves the
-   target device's controller state is ready *and* that exact Pod's own
-   resolved cgroup already carries the expected `io.weight` override,
-   and only then writes `/gate/start` itself. It never depends on the
-   adapter being healthy, so a stalled adapter (see
+   **immediately after** the adapter and device state are ready. Each
+   Pod's `start-gate` volume is now a plain, non-privileged `hostPath`
+   (not an `emptyDir`) — the gate file lives on the node, not inside
+   either Pod's own filesystem, so a separate Pod can write it.
+5. Read back both Pods' live `metadata.uid`, then render and apply
+   `deployments/iocost-adapter/experiment/gate-wait-pod.yaml.tmpl` with
+   `{{APP_A_POD_UID}}`/`{{APP_B_POD_UID}}` resolved to those UIDs and
+   `{{ADAPTER_IMAGE}}` resolved to the same digest used for the adapter
+   Pod. **You do not need to manually open the workload-start gate.**
+   This standalone `gate-wait` Pod (`cmd/gate-wait`) is a code-enforced
+   barrier, not an operator convention: it independently polls the
+   local cgroup filesystem — never the adapter process, never its logs
+   — until it proves the target device's controller state is ready
+   *and* each application Pod's own resolved cgroup already carries its
+   expected `io.weight` override, and only then writes that Pod's
+   `/gate/start` file itself, via the same node-local `hostPath` both
+   Pods share. It runs in the adapter's own namespace, not alongside the
+   application Pods, because a privileged read of `/sys/fs/cgroup` from
+   the experiment namespace hits the same admission-forced
+   user-namespace remap noted above for the qualification Pod — the
+   node-local namespace is exempt, the same reason the adapter itself
+   runs there. It never depends on the adapter being healthy, so a
+   stalled adapter (see
    `results/19-phase5-scheduler-selected-symmetric-100-100.md` in the
    private workspace this fork's maintainer runs from, for the run that
-   motivated this) produces a Pod stuck in `Init` until `GATE_TIMEOUT`
-   (default 60s) and then a clean, visible failure — never a Pod that
-   runs `fio` against unproven state. If a Pod is still `Init` well past
-   `GATE_TIMEOUT`, treat it as a failed cell: check the `gate-wait`
-   container's own logs (`kubectl logs -c gate-wait`) for its last
-   observed reason, and do not attempt to work around it by touching
+   motivated this) produces a `gate-wait` Pod that fails closed on
+   `GATE_TIMEOUT` (default 60s) without ever writing either start file —
+   application Pods that wait forever (until their own
+   `activeDeadlineSeconds`), never Pods that run `fio` against unproven
+   state. If `gate-wait` is not `Completed` well past `GATE_TIMEOUT`,
+   treat it as a failed cell: check its own logs for the last observed
+   reason, and do not attempt to work around it by touching
    `/gate/start` yourself — that would defeat the barrier's entire
    purpose. A cell whose registered weight equals the cgroup-v2 default,
    such as a `100:100` symmetric control, cannot be distinguished from a
-   complete absence of any write by workload throughput alone; `gate-wait`
-   passing is what establishes that the write happened, not the fio
-   numbers.
+   complete absence of any write by workload throughput alone;
+   `gate-wait` passing is what establishes that the write happened, not
+   the fio numbers.
 6. Poll for `/gate/done` in both Pods; retrieve `/gate/fio-result.json`
    from each as soon as it appears (a Pod can still hit
    `activeDeadlineSeconds` after `fio` finishes but before you collect

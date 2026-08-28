@@ -1,0 +1,76 @@
+# The code-enforced workload-start barrier for one cell (cmd/gate-wait).
+# Runs as its own standalone Pod, pinned to the same Node as the adapter
+# and the application Pods -- NOT an initContainer inside the application
+# Pods, because a privileged read of /sys/fs/cgroup from inside the
+# experiment namespace hits the same admission-forced user-namespace
+# remap documented in docs/experiment-runbook.md; the node-local
+# namespace this Pod (like the adapter) runs in is exempt. It never
+# depends on the adapter process being healthy -- it independently reads
+# the same cgroup filesystem the adapter writes to.
+#
+# It writes app-a's and app-b's start-gate files only after proving, via
+# pkg/iocostadapter.GateCheck, that the target device's controller state
+# is ready AND that Pod's own resolved cgroup already carries its
+# expected io.weight override. Fails closed on GATE_TIMEOUT without
+# writing either file, so a stalled adapter produces application Pods
+# that never run fio, not Pods that run fio against unproven state.
+#
+# Apply this AFTER both application Pods exist (it needs their live Pod
+# UIDs) and BEFORE relying on their fio containers to start -- see
+# docs/experiment-runbook.md for the exact sequencing. Render this
+# template first (see cmd/render-target); never apply it with
+# __PLACEHOLDER__ tokens still present, and substitute
+# {{APP_A_POD_UID}}/{{APP_B_POD_UID}} with each Pod's live
+# `metadata.uid` read back after creation (not knowable at render time).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: iocost-gate-wait
+  namespace: {{ADAPTER_NAMESPACE}}
+  labels:
+    app: iocost-gate-wait
+spec:
+  restartPolicy: Never
+  activeDeadlineSeconds: 90
+  nodeName: __NODE_NAME__
+  containers:
+    - name: gate-wait
+      image: "{{ADAPTER_IMAGE}}"
+      command: ["/usr/local/bin/gate-wait"]
+      securityContext:
+        privileged: true
+        readOnlyRootFilesystem: true
+      env:
+        - name: GATE_CGROUP_ROOT
+          value: /sys/fs/cgroup
+        - name: GATE_DEVICE
+          value: __DEVICE_MAJMIN__
+        - name: GATE_TIMEOUT
+          value: "60s"
+        - name: GATE_POD_UID_A
+          value: "{{APP_A_POD_UID}}"
+        - name: GATE_EXPECTED_WEIGHT_A
+          value: "{{APP_A_WEIGHT}}"
+        - name: GATE_START_FILE_A
+          value: /gate-host/app-a/start
+        - name: GATE_POD_UID_B
+          value: "{{APP_B_POD_UID}}"
+        - name: GATE_EXPECTED_WEIGHT_B
+          value: "{{APP_B_WEIGHT}}"
+        - name: GATE_START_FILE_B
+          value: /gate-host/app-b/start
+      volumeMounts:
+        - name: cgroup
+          mountPath: /sys/fs/cgroup
+          readOnly: true
+        - name: gate-host
+          mountPath: /gate-host
+  volumes:
+    - name: cgroup
+      hostPath:
+        path: /sys/fs/cgroup
+        type: Directory
+    - name: gate-host
+      hostPath:
+        path: /tmp/iocost-gate/{{CELL_ID}}
+        type: DirectoryOrCreate
