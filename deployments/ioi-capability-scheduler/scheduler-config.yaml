@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ioi-capability-scheduler-config
+  namespace: kube-system
+data:
+  scheduler-config.yaml: |
+    apiVersion: kubescheduler.config.k8s.io/v1
+    kind: KubeSchedulerConfiguration
+    # Distinct scheduler identity: only Pods that opt in via
+    # spec.schedulerName: ioi-scheduler are ever scheduled by this
+    # instance. The default scheduler and every other Pod in the
+    # cluster is untouched. Reuses the same profile name as the plain
+    # optional scheduler (../iocost-adapter/scheduler-optional/) -- only
+    # one of the two should ever be deployed at a time; this one adds
+    # the IOCostCapability Filter plugin the plain one does not have.
+    profiles:
+      - schedulerName: ioi-scheduler
+        plugins:
+          multiPoint:
+            disabled:
+              - name: "*"
+            enabled:
+              - name: PrioritySort
+              - name: TaintToleration
+              - name: NodeAffinity
+              - name: NodeResourcesFit
+              - name: IOCostCapability
+              - name: DefaultBinder
+    leaderElection:
+      leaderElect: false

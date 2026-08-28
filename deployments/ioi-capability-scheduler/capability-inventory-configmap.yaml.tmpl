@@ -1,0 +1,30 @@
+# Dedicated, removable, experiment-scoped ConfigMap -- the scheduler's
+# only source of qualification data. Never a Node label/taint (see
+# docs/architecture.md).
+#
+# `data.records.json` must be a JSON object: {"records": [ ...one or
+# more record objects... ]}. Each record's fields are produced by
+# cmd/render-capability-record from the same targetrecord.Record used to
+# qualify the node for the adapter -- never hand-typed. Build it like:
+#
+#   ./bin/render-capability-record \
+#     -record target-record.json \
+#     -model-identity "$(sha256sum reviewed-model.yaml | cut -d' ' -f1)" \
+#     -out capability-record.json
+#   jq -s '{records: .}' capability-record.json > records.json
+#   kubectl create configmap ioi-capability-inventory \
+#     --namespace={{CAPABILITY_NAMESPACE}} \
+#     --from-file=records.json=records.json \
+#     --dry-run=client -o yaml
+#
+# A record with more than one entry claiming the same nodeName is
+# treated as ambiguous and rejected for that node (fail closed, not
+# "pick one") -- see scheduler-plugin/pkg/iocostschedulerplugin.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ioi-capability-inventory
+  namespace: "{{CAPABILITY_NAMESPACE}}"
+data:
+  records.json: |
+    {"records": []}

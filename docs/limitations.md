@@ -34,6 +34,19 @@ chain in `architecture.md`. It is not a benchmark of any specific
 production workload, and no cost/benefit envelope from it has been
 reviewed or approved as acceptable for any real application.
 
+Separately, bounded scheduler plumbing — **not** the IOCost chain above,
+and not connected to it — is also demonstrated: the capability-aware
+secondary scheduler (`scheduler-plugin/`,
+`deployments/ioi-capability-scheduler/`) was shown, on a 3-node
+topology, to route an opted-in Pod exclusively onto the one Node with an
+exact, current, unambiguous capability-inventory record, and to reject
+every other case (missing record, stale Node UID) fail-closed with no
+fallback to `nodeName`/affinity/default-scheduler placement — see
+`architecture.md`'s "bounded scheduler plumbing" section for the full
+evidence. This demonstrates the plugin's Filter decision mechanism
+only: no Score plugin, no multi-node optimization, and no claim that any
+`io.weight` value corresponds to a production priority level.
+
 ## Packaged but not validated
 
 The optional secondary scheduler
@@ -54,6 +67,14 @@ Keep it in the repo as a starting point — do not remove it — but do not
 describe it as validated, tested, or production-ready in any downstream
 documentation.
 
+The capability-aware scheduler above has moved out of this category for
+its narrow Filter-routing claim (see "Demonstrated"), but everything
+else about it remains packaged, not validated: no Score plugin exists,
+production capability publication/model distribution to a scheduler at
+scale is unsolved (the bounded proof's capability record is hand-built
+from one target record at a time), and it has not been tested under node
+churn/disruption beyond the single stale-UID case above.
+
 ## Open product gate
 
 Two things this fork does **not** provide, and that would need real
@@ -66,10 +87,14 @@ design and validation work before any production use:
    envelope has been proposed, reviewed, or approved by anyone.
 2. **A real placement/tenancy decision that consumes this evidence.**
    Something that decides, at scheduling time, which workloads may
-   safely share a device given their protection intent — built on top
-   of (but distinct from) the optional scheduler package above, and
-   validated the same rigorous way the IOCost materialization chain was:
-   with real causal experiments, not by inference from packaging.
+   safely share a device given their protection intent, and does so at
+   fleet scale. The bounded scheduler-plumbing proof above shows the
+   Filter-routing mechanism works on 3 nodes with a hand-built
+   ConfigMap; it does not show how capability records get published,
+   versioned, or distributed across a real fleet, does not rank or
+   optimize across multiple qualified candidates (no Score plugin), and
+   does not establish that any `io.weight` value is a safe or correct
+   production priority.
 
 Until both of these exist and are independently reviewed, this project
 should be described as a working proof of the IOCost materialization

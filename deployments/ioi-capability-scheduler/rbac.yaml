@@ -1,0 +1,84 @@
+# Distinct identity from both the plain optional scheduler
+# (../iocost-adapter/scheduler-optional/) and the adapter itself. Grants
+# exactly: standard scheduler Pod-binding/eventing permissions, plus
+# read-only access to the one experiment-scoped capability ConfigMap.
+#
+# Deliberately does NOT grant: any cgroup/hostPath capability (this is a
+# scheduler, not the adapter -- it never touches a node's filesystem);
+# Node mutation (get/list/watch only); ConfigMap write (read-only,
+# get/list/watch); NodePool/EC2NodeClass/webhook access of any kind.
+#
+# Proven-minimal addition (2026-08-28, same lesson as the plain optional
+# scheduler's events.k8s.io/namespaces grants): the kube-scheduler
+# framework's default informer factory unconditionally starts
+# cluster-scoped watches for PersistentVolume, PersistentVolumeClaim,
+# StorageClass, CSINode, CSIDriver and CSIStorageCapacity regardless of
+# which multiPoint plugins are enabled. Without read access to these,
+# WaitForCacheSync never returns and the scheduling queue never starts
+# processing any Pod -- confirmed live: zero scheduling attempts, zero
+# events, for 5+ minutes with only ConfigMap/Node/Pod RBAC granted. The
+# grants below are read-only (get/list/watch), same boundary as above.
+# Also required: pods/status patch/update -- the scheduler's own
+# schedule_one.go path updates Pod status/conditions (e.g. marking
+# Unschedulable) as a normal part of the Filter-reject path itself, not
+# a Node mutation of any kind.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ioi-capability-scheduler
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ioi-capability-scheduler-role
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["pods/binding"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["pods/status"]
+    verbs: ["patch", "update"]
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch", "update"]
+  - apiGroups: ["events.k8s.io"]
+    resources: ["events"]
+    verbs: ["create", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+  # The one addition over the plain optional scheduler: read-only access
+  # to ConfigMaps, needed to read the capability inventory. Not scoped to
+  # a single namespace here only because ClusterRole/ClusterRoleBinding
+  # is the simplest form for a cluster-wide scheduler profile; the
+  # scheduler binary itself only ever reads the one ConfigMap name/
+  # namespace it is configured with (see scheduler-deployment.yaml).
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["persistentvolumes", "persistentvolumeclaims"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses", "csinodes", "csidrivers", "csistoragecapacities"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ioi-capability-scheduler-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ioi-capability-scheduler-role
+subjects:
+  - kind: ServiceAccount
+    name: ioi-capability-scheduler
+    namespace: kube-system

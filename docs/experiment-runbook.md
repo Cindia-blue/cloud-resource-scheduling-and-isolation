@@ -138,6 +138,43 @@ After the differentiated cell (or after any failure at any step):
    default everywhere, no orphaned cgroups for any Pod UID used across
    either cell, zero residual objects from this procedure.
 
+## 6. Optional: capability-aware scheduler plumbing proof (separate from the cells above)
+
+This procedure validates only the Filter-routing mechanism in
+`scheduler-plugin/`/`deployments/ioi-capability-scheduler/` — it uses no
+`io.weight`, no `fio`, and no live I/O, and is independent of sections
+1-5. Do not mix it into the same cluster state as an active application
+cell.
+
+1. Build the scheduler image from `scheduler-plugin/` against the
+   cluster's exact Kubernetes minor (the binary fails to start on a
+   mismatch); apply `rbac.yaml`, `scheduler-config.yaml`, and
+   `scheduler-deployment.yaml.tmpl` (rendered) to `kube-system`. RBAC
+   must include read-only access to PersistentVolume/
+   PersistentVolumeClaim/StorageClass/CSINode/CSIDriver/
+   CSIStorageCapacity and `pods/status` patch — without these the
+   scheduler framework's default informers never sync and no Pod is
+   ever scheduled (this is a hard blocker, not log noise).
+2. Generate the capability record with `cmd/render-capability-record`
+   from a fresh, freshly-reverified target record — never hand-typed —
+   and wrap it into the `ioi-capability-inventory` ConfigMap
+   (`capability-inventory-configmap.yaml.tmpl` documents the exact
+   `jq`/`kubectl` steps).
+3. Run the four bounded tests against `test-pods/*.yaml.tmpl`: no
+   record (Pod stays Pending, plugin reports missing qualification);
+   one exact record (Pod binds to exactly that Node,
+   `evaluatedNodes`/`feasibleNodes` in the scheduler's own logs
+   confirms only one candidate passed); a deliberately stale Node UID
+   in the record (all nodes rejected, reason names the exact
+   stale-vs-live UID mismatch); a control Pod with no `schedulerName`
+   (must follow the ordinary default scheduler, confirmed by the
+   custom scheduler's own logs showing it never attempted to schedule
+   or bind that Pod). Delete each test Pod and confirm `NotFound`
+   before moving to the next test.
+4. Final cleanup: delete the capability ConfigMap, the scheduler
+   Deployment/ConfigMap/RBAC, and any anchor Pod; confirm zero residual
+   objects and that all candidate Nodes are still `Ready`.
+
 ## Reading the results
 
 - Treat PSI (`io.pressure`) as engagement/context evidence only, never as

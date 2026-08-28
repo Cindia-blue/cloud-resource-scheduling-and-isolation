@@ -1,0 +1,55 @@
+# Custom scheduler binary (not stock kube-scheduler): stock kube-scheduler
+# command wiring (k8s.io/kubernetes/cmd/kube-scheduler/app) plus exactly
+# one added out-of-tree Filter plugin, IOCostCapability
+# (scheduler-plugin/pkg/iocostschedulerplugin). Built against the
+# k8s.io/kubernetes v1.34.9 / k8s.io/kube-scheduler v0.34.9 dependency
+# line to match this cluster's control-plane minor version exactly --
+# see scheduler-plugin/go.mod. Never replaces, patches, or restarts the
+# cluster's real default scheduler.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ioi-capability-scheduler
+  namespace: kube-system
+  labels:
+    app: ioi-capability-scheduler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ioi-capability-scheduler
+  template:
+    metadata:
+      labels:
+        app: ioi-capability-scheduler
+    spec:
+      serviceAccountName: ioi-capability-scheduler
+      containers:
+        - name: ioi-capability-scheduler
+          # Pin this to your own build's digest -- see
+          # docs/experiment-runbook.md for the build/push procedure.
+          image: "{{SCHEDULER_IMAGE}}"
+          command:
+            - /usr/local/bin/ioi-capability-scheduler
+            - --config=/etc/ioi-capability-scheduler/scheduler-config.yaml
+            - --leader-elect=false
+            - --secure-port=0
+            - --feature-gates=DynamicResourceAllocation=false
+          env:
+            # Namespace and name of the dedicated, experiment-scoped
+            # capability inventory ConfigMap this scheduler reads. There
+            # is no default namespace -- the binary refuses to start
+            # without one, per its own fail-closed startup check.
+            - name: CAPABILITY_NAMESPACE
+              value: "{{CAPABILITY_NAMESPACE}}"
+            - name: CAPABILITY_CONFIGMAP
+              value: "ioi-capability-inventory"
+            - name: CAPABILITY_MAX_AGE
+              value: "20m"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/ioi-capability-scheduler
+      volumes:
+        - name: config
+          configMap:
+            name: ioi-capability-scheduler-config

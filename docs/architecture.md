@@ -15,6 +15,7 @@ for the maturity-level breakdown this document is built on.
 | `iocostintent` | `pkg/iocostintent` | Pure planning code for the application-to-application weight intent (`Intent`, `Plan`, `PlannedWrite`). Never opens a cgroup file or calls Kubernetes itself. |
 | `targetrecord` | `pkg/targetrecord`, `cmd/render-target` | Fail-closed identity binding: one frozen, render-time snapshot of Node identity (name/UID/providerID) and device identity (EBS volume ID/type/IOPS/throughput/major:minor), re-verified immediately before every live apply. Rejects cross-node, stale, unresolved, or duplicate mappings. Major:minor is never treated as portable across nodes. |
 | optional secondary scheduler | `deployments/iocost-adapter/scheduler-optional/` | A stock, unmodified `kube-scheduler` binary, opt-in only via `spec.schedulerName`. **Packaged, not validated** — see below. |
+| capability-aware secondary scheduler | `scheduler-plugin/`, `deployments/ioi-capability-scheduler/` | A custom `kube-scheduler` binary with exactly one added Filter plugin (`IOCostCapability`), built as its own Go module against the cluster's exact Kubernetes minor. Opt-in only via `spec.schedulerName: ioi-scheduler` plus a protection-intent annotation. **Bounded scheduler-plumbing proof completed — see below. Still not multi-node optimization, a Score policy, or a production placement decision.** |
 | retired `io.max` path | `pkg/service/disk` | The historical hard-throttle enforcement primitive. Hard-disabled in this fork (`codes.Unimplemented`); IOCost `io.weight` replaces it entirely for the disk-only scope this fork maintains. |
 
 ## The validated causal chain
@@ -85,3 +86,34 @@ application intent → scheduler placement/tenancy decision
 See `limitations.md` for how this fits into the project's overall
 maturity, and `scheduler-optional/README.md` for the component's own
 scope note.
+
+## What IS now validated: bounded scheduler plumbing (separate from the IOCost chain above)
+
+A distinct, later phase validated one narrow claim about the
+capability-aware secondary scheduler
+(`scheduler-plugin/`, `deployments/ioi-capability-scheduler/`) on a
+3-node topology (1 pre-qualified, 2 unqualified): an opted-in Pod with
+no `nodeName`/affinity is routed exclusively onto a Node with an exact,
+current, unambiguous entry in a dedicated capability inventory
+ConfigMap — not any other candidate, and not by `nodeName`, affinity, or
+default-scheduler fallback. Evidence (four live tests, each followed by
+full cleanup):
+
+- **No record**: Pod stays `Pending`; plugin reports "missing
+  qualification" for every real candidate; no fallback.
+- **One exact qualified record**: `evaluatedNodes=5 feasibleNodes=1` —
+  the plugin's own Filter binds the Pod to exactly the qualified Node.
+- **Stale Node UID**: all nodes rejected, including the previously-
+  qualified one, with a rejection reason naming the exact stale-vs-live
+  UID mismatch; Pod stays `Pending`.
+- **Default-scheduler control** (no `schedulerName`): the Pod is placed
+  by the ordinary EKS default scheduler; the custom scheduler's own logs
+  show it never attempted to schedule or bind that Pod.
+
+This is still **not** the same claim as the IOCost causal chain above —
+the two are independent proofs and neither one validates the other. The
+scheduler-plumbing proof does not use `io.weight`, `fio`, or any live
+I/O; the IOCost chain's completed cells still use `spec.nodeName`, not
+this scheduler. What remains open: multi-node optimization, a Score
+policy, `io.weight` value semantics, and production capability
+publication/model distribution (see `limitations.md`).

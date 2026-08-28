@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Public-safety scan for deployments/iocost-adapter: fail closed if a
-# rendered-looking manifest (a real instance ID, account ID, or internal
-# hostname where a __PLACEHOLDER__ or {{PLACEHOLDER}} token belongs) or an
-# obvious secret pattern is committed. Run from the repo root before
-# committing any change under deployments/iocost-adapter.
+# Public-safety scan for deployments/: fail closed if a rendered-looking
+# manifest (a real instance ID, account ID, or internal hostname where a
+# __PLACEHOLDER__ or {{PLACEHOLDER}} token belongs) or an obvious secret
+# pattern is committed. Run from the repo root before committing any
+# change under deployments/.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DIR="$ROOT/deployments/iocost-adapter"
+DIR="$ROOT/deployments"
 
 fail=0
 
