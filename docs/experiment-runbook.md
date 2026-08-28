@@ -90,21 +90,38 @@ workload cell on unqualified device state.
    let more than a few seconds elapse between Pod creation and releasing
    the start gate below, or `activeDeadlineSeconds` can fire before the
    workload ever runs.
-5. Wait for both Pods to reach `Running`, then immediately `exec` a
-   `touch /gate/start` into both.
-6. Independently verify — from a separate `exec`/read path, not just the
-   adapter's own emitted log — that both Pods' `io.weight` is the
-   expected `100` on the exact `major:minor` device, and that the Pod
-   UID → cgroup mapping matches what the adapter reports.
-7. Poll for `/gate/done` in both Pods; retrieve `/gate/fio-result.json`
+5. Wait for both Pods to reach `Running`. **Do not open the gate yet.**
+   The comment in `manifests/README.md` that "workload I/O cannot begin
+   before adapter readback proves the treatment materialized" describes
+   an intent, not an enforced invariant — nothing in the adapter or the
+   Pod template checks this for you. You must check it yourself, every
+   time:
+   - Poll the adapter's `/readyz` (or its emitted log) until it reports
+     `MATERIALIZED_READBACK_PROVEN` for this exact cell — not merely
+     `Running`/`Ready` at the container level, and not merely the
+     absence of a recent `FAIL_CLOSED` line (a stalled adapter can go
+     silent without ever reaching either verdict; treat a poll timeout
+     the same as an explicit failure).
+   - Independently verify — from a separate `exec`/read path, not just
+     the adapter's own emitted log — that both Pods' `io.weight` is
+     already the expected value on the exact `major:minor` device, and
+     that the Pod UID → cgroup mapping matches what the adapter reports.
+   Only after both checks pass, `exec` a `touch /gate/start` into both
+   Pods. If either check does not pass within your own bounded timeout,
+   stop and clean up — do not open the gate on an unconfirmed adapter
+   state, and do not infer materialization from workload throughput
+   alone (a cell whose registered weight equals the cgroup-v2 default,
+   such as a `100:100` symmetric control, cannot be distinguished from a
+   complete absence of any write by throughput alone).
+6. Poll for `/gate/done` in both Pods; retrieve `/gate/fio-result.json`
    from each as soon as it appears (a Pod can still hit
    `activeDeadlineSeconds` after `fio` finishes but before you collect
    the result, while it idles waiting for your stop signal — if that
    happens, the full JSON is usually still recoverable from
    `kubectl logs`, since the script tees to stdout as well).
-8. `touch /gate/stop` in both Pods and confirm both reach `Completed`
+7. `touch /gate/stop` in both Pods and confirm both reach `Completed`
    with exit code `0`.
-9. **Full cleanup before the next cell**: delete both workload Pods,
+8. **Full cleanup before the next cell**: delete both workload Pods,
    disable `io.cost.qos`, delete the adapter Pod, and independently
    verify (separate Pod/session) that weights are back to default, the
    model is inert, and no orphaned cgroups remain for either Pod's UID.
