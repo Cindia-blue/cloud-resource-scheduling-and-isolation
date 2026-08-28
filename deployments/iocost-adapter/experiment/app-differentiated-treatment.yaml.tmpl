@@ -16,14 +16,25 @@
 # Render this template first (see cmd/render-target); never apply it
 # with __PLACEHOLDER__ tokens still present.
 #
+# The gate-wait initContainer (cmd/gate-wait) is the code-enforced
+# workload-start barrier: it independently polls the local cgroup
+# filesystem -- never the adapter process or its logs -- until it proves
+# the target device's controller state is ready AND this exact Pod's own
+# resolved cgroup already carries the expected io.weight override, then
+# and only then writes /gate/start. It never depends on the adapter being
+# healthy, and it fails closed on GATE_TIMEOUT without ever writing the
+# start file, so a stalled adapter produces a Pod that never runs fio
+# instead of one that runs fio against unproven state (see
+# docs/experiment-runbook.md and pkg/iocostadapter/gate.go).
+#
 # Bounded workload shape: randwrite, 4k blocks, libaio/iodepth=16/
 # direct=1, a 1GiB reusable working region capped at 2GiB cumulative
 # I/O, rate-capped at 16000 IOPS, and a 30s runtime cap with no
 # time_based looping past the cumulative cap. Pod-level
-# activeDeadlineSeconds=45 is the outer Kubernetes-enforced ceiling,
-# independent of the gate script -- release the start gate (see
-# docs/experiment-runbook.md) within seconds of both Pods reaching
-# Running, or this deadline can fire before the workload ever runs.
+# activeDeadlineSeconds must exceed GATE_TIMEOUT plus the fio runtime --
+# this template uses 90s (60s gate-wait timeout + 30s fio runtime +
+# margin), wider than the 45s used before the barrier existed, since the
+# barrier itself now consumes part of the deadline budget.
 apiVersion: v1
 kind: Pod
 metadata:
@@ -36,8 +47,36 @@ metadata:
     iocost.poc/io-weight: "300"
 spec:
   restartPolicy: Never
-  activeDeadlineSeconds: 45
+  activeDeadlineSeconds: 90
   nodeName: __NODE_NAME__
+  initContainers:
+    - name: gate-wait
+      image: "{{ADAPTER_IMAGE}}"
+      command: ["/usr/local/bin/gate-wait"]
+      securityContext:
+        privileged: true
+        readOnlyRootFilesystem: true
+      env:
+        - name: GATE_CGROUP_ROOT
+          value: /sys/fs/cgroup
+        - name: GATE_DEVICE
+          value: __DEVICE_MAJMIN__
+        - name: GATE_EXPECTED_WEIGHT
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['iocost.poc/io-weight']
+        - name: GATE_POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: GATE_TIMEOUT
+          value: "60s"
+      volumeMounts:
+        - name: cgroup
+          mountPath: /sys/fs/cgroup
+          readOnly: true
+        - name: start-gate
+          mountPath: /gate
   containers:
     - name: fio-antagonist
       image: "{{FIO_IMAGE}}"
@@ -62,6 +101,10 @@ spec:
       emptyDir: {}
     - name: start-gate
       emptyDir: {}
+    - name: cgroup
+      hostPath:
+        path: /sys/fs/cgroup
+        type: Directory
 ---
 apiVersion: v1
 kind: Pod
@@ -75,8 +118,36 @@ metadata:
     iocost.poc/io-weight: "100"
 spec:
   restartPolicy: Never
-  activeDeadlineSeconds: 45
+  activeDeadlineSeconds: 90
   nodeName: __NODE_NAME__
+  initContainers:
+    - name: gate-wait
+      image: "{{ADAPTER_IMAGE}}"
+      command: ["/usr/local/bin/gate-wait"]
+      securityContext:
+        privileged: true
+        readOnlyRootFilesystem: true
+      env:
+        - name: GATE_CGROUP_ROOT
+          value: /sys/fs/cgroup
+        - name: GATE_DEVICE
+          value: __DEVICE_MAJMIN__
+        - name: GATE_EXPECTED_WEIGHT
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['iocost.poc/io-weight']
+        - name: GATE_POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: GATE_TIMEOUT
+          value: "60s"
+      volumeMounts:
+        - name: cgroup
+          mountPath: /sys/fs/cgroup
+          readOnly: true
+        - name: start-gate
+          mountPath: /gate
   containers:
     - name: fio-antagonist
       image: "{{FIO_IMAGE}}"
@@ -101,3 +172,7 @@ spec:
       emptyDir: {}
     - name: start-gate
       emptyDir: {}
+    - name: cgroup
+      hostPath:
+        path: /sys/fs/cgroup
+        type: Directory

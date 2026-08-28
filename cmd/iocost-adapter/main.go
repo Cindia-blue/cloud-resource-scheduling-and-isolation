@@ -30,18 +30,19 @@ const (
 )
 
 type config struct {
-	Mode       string
-	Node       string
-	Namespace  string
-	ActiveCell string
-	Device     string
-	DataMount  string
-	RootMount  string
-	SysRoot    string
-	CgroupRoot string
-	Baseline   uint32
-	Poll       time.Duration
-	HTTPAddr   string
+	Mode             string
+	Node             string
+	Namespace        string
+	ActiveCell       string
+	Device           string
+	DataMount        string
+	RootMount        string
+	SysRoot          string
+	CgroupRoot       string
+	Baseline         uint32
+	Poll             time.Duration
+	ReconcileTimeout time.Duration
+	HTTPAddr         string
 }
 
 type controller struct {
@@ -112,13 +113,18 @@ func loadConfig() (config, error) {
 	if err != nil || poll < time.Second {
 		return config{}, fmt.Errorf("POLL_INTERVAL must be at least 1s")
 	}
+	reconcileTimeout, err := time.ParseDuration(env("RECONCILE_TIMEOUT", "10s"))
+	if err != nil || reconcileTimeout <= 0 {
+		return config{}, fmt.Errorf("RECONCILE_TIMEOUT must be a positive duration")
+	}
 	cfg := config{
 		Mode: strings.ToLower(env("IOI_MODE", "observe")), Node: os.Getenv("NODE_NAME"),
 		Namespace: env("TARGET_NAMESPACE", "cindy1-ioi"), ActiveCell: os.Getenv("ACTIVE_CELL"),
 		DataMount: env("DATA_MOUNT", "/mnt/kubelet"), RootMount: env("ROOT_MOUNT", "/"),
 		SysRoot:    env("SYS_ROOT", "/sys"),
 		CgroupRoot: env("CGROUP_ROOT", "/sys/fs/cgroup"),
-		Baseline:   uint32(baseline64), Poll: poll, HTTPAddr: env("HTTP_ADDR", ":8080"),
+		Baseline:   uint32(baseline64), Poll: poll, ReconcileTimeout: reconcileTimeout,
+		HTTPAddr: env("HTTP_ADDR", ":8080"),
 	}
 	if cfg.Mode != "observe" && cfg.Mode != "enforce" {
 		return config{}, fmt.Errorf("IOI_MODE must be observe or enforce")
@@ -147,7 +153,32 @@ func (c *controller) run(ctx context.Context) error {
 	defer ticker.Stop()
 
 	for {
-		if err := c.reconcile(ctx); err != nil {
+		// Every reconcile call gets its own bounded deadline, independent
+		// of the process-lifetime ctx above. Without this, a single
+		// stalled Kubernetes API call inside reconcile blocks this
+		// for-loop from ever reaching the select below again -- the poll
+		// ticker keeps firing but nothing consumes it, and no further
+		// evidence of any kind is ever emitted again, silently defeating
+		// the fail-closed contract every other check in this file is built
+		// on. This was observed live: FAIL_CLOSED logged every ~2s, then
+		// zero log lines of any kind for the rest of a run once conditions
+		// should have allowed materialization to proceed (see
+		// docs/experiment-runbook.md's gate-ordering note).
+		//
+		// Scope of this fix: it bounds the one context-aware call in
+		// reconcile (the Pods().List() Kubernetes API call), which is the
+		// most plausible cause of an indefinite, silent stall -- the other
+		// steps (CheckControllerReady, DiscoverPodCgroup, the cgroup
+		// writes/reads) are pure, fast, local syscalls with no known
+		// blocking behavior, confirmed by direct source review. It does
+		// NOT preempt a truly stuck syscall in those steps, since Go
+		// cannot cancel a syscall that ignores its context; that residual
+		// risk is why cmd/gate-wait exists as a fully independent barrier
+		// that never depends on this adapter process being healthy at all.
+		reconcileCtx, cancel := context.WithTimeout(ctx, c.cfg.ReconcileTimeout)
+		err := c.reconcile(reconcileCtx)
+		cancel()
+		if err != nil {
 			c.ready.Store(false)
 			c.emit(evidence{Verdict: "FAIL_CLOSED", Error: err.Error()})
 		}

@@ -86,33 +86,33 @@ workload cell on unqualified device state.
    whole runtime).
 4. Render and apply
    `deployments/iocost-adapter/experiment/app-symmetric-control.yaml.tmpl`
-   **immediately after** the adapter and device state are ready — do not
-   let more than a few seconds elapse between Pod creation and releasing
-   the start gate below, or `activeDeadlineSeconds` can fire before the
-   workload ever runs.
-5. Wait for both Pods to reach `Running`. **Do not open the gate yet.**
-   The comment in `manifests/README.md` that "workload I/O cannot begin
-   before adapter readback proves the treatment materialized" describes
-   an intent, not an enforced invariant — nothing in the adapter or the
-   Pod template checks this for you. You must check it yourself, every
-   time:
-   - Poll the adapter's `/readyz` (or its emitted log) until it reports
-     `MATERIALIZED_READBACK_PROVEN` for this exact cell — not merely
-     `Running`/`Ready` at the container level, and not merely the
-     absence of a recent `FAIL_CLOSED` line (a stalled adapter can go
-     silent without ever reaching either verdict; treat a poll timeout
-     the same as an explicit failure).
-   - Independently verify — from a separate `exec`/read path, not just
-     the adapter's own emitted log — that both Pods' `io.weight` is
-     already the expected value on the exact `major:minor` device, and
-     that the Pod UID → cgroup mapping matches what the adapter reports.
-   Only after both checks pass, `exec` a `touch /gate/start` into both
-   Pods. If either check does not pass within your own bounded timeout,
-   stop and clean up — do not open the gate on an unconfirmed adapter
-   state, and do not infer materialization from workload throughput
-   alone (a cell whose registered weight equals the cgroup-v2 default,
+   (with `{{ADAPTER_IMAGE}}` resolved to the same digest used for the
+   adapter Pod, so the `gate-wait` initContainer described below comes
+   from the exact same build) **immediately after** the adapter and
+   device state are ready.
+5. Wait for both Pods to reach `Running`. **You do not need to manually
+   open the workload-start gate.** Each Pod's `gate-wait` initContainer
+   (`cmd/gate-wait`) is a code-enforced barrier, not an operator
+   convention: it independently polls the local cgroup filesystem —
+   never the adapter process, never its logs — until it proves the
+   target device's controller state is ready *and* that exact Pod's own
+   resolved cgroup already carries the expected `io.weight` override,
+   and only then writes `/gate/start` itself. It never depends on the
+   adapter being healthy, so a stalled adapter (see
+   `results/19-phase5-scheduler-selected-symmetric-100-100.md` in the
+   private workspace this fork's maintainer runs from, for the run that
+   motivated this) produces a Pod stuck in `Init` until `GATE_TIMEOUT`
+   (default 60s) and then a clean, visible failure — never a Pod that
+   runs `fio` against unproven state. If a Pod is still `Init` well past
+   `GATE_TIMEOUT`, treat it as a failed cell: check the `gate-wait`
+   container's own logs (`kubectl logs -c gate-wait`) for its last
+   observed reason, and do not attempt to work around it by touching
+   `/gate/start` yourself — that would defeat the barrier's entire
+   purpose. A cell whose registered weight equals the cgroup-v2 default,
    such as a `100:100` symmetric control, cannot be distinguished from a
-   complete absence of any write by throughput alone).
+   complete absence of any write by workload throughput alone; `gate-wait`
+   passing is what establishes that the write happened, not the fio
+   numbers.
 6. Poll for `/gate/done` in both Pods; retrieve `/gate/fio-result.json`
    from each as soon as it appears (a Pod can still hit
    `activeDeadlineSeconds` after `fio` finishes but before you collect

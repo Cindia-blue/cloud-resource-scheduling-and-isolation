@@ -1,4 +1,4 @@
-.PHONY: build test iocost-adapter
+.PHONY: build test iocost-adapter gate-wait
 .FORCE:
 
 DEBUG ?= 0
@@ -86,6 +86,10 @@ ioi-service:
 iocost-adapter:
 	@mkdir -p bin
 	$(GO_CMD) build -o bin $(GOFLAGS) ./cmd/iocost-adapter
+
+gate-wait:
+	@mkdir -p bin
+	$(GO_CMD) build -o bin $(GOFLAGS) ./cmd/gate-wait
 
 render-target:
 	@mkdir -p bin
