@@ -1,0 +1,105 @@
+# Single-node IOCost adapter, rendered per attempt against a fresh
+# targetrecord.Record (see cmd/render-target and docs/experiment-runbook.md).
+# Never apply this file directly with the __PLACEHOLDER__ tokens still
+# present -- render it first so no committed manifest embeds a specific,
+# time-bound instance identity.
+#
+# Two values below are deliberately NOT part of the target record schema
+# (they are build/deploy-time choices, not per-node identity) and use a
+# different bracket style on purpose: `render-target` fails closed on any
+# unresolved `__KEY__` token, so these are edited directly (e.g. `sed`) by
+# whoever deploys this, before or after rendering the identity fields.
+#   {{ADAPTER_IMAGE}}     -- the adapter image, pinned by digest
+#   {{TARGET_NAMESPACE}}  -- namespace the adapter watches for cell-labeled Pods
+#
+# The adapter is the sole component that ever writes a Pod-level
+# cgroup-v2 io.weight value. It never uses the retired io.max hard-throttle
+# path. IOI_MODE=observe performs read-only reconciliation; IOI_MODE=enforce
+# additionally requires ACTIVE_CELL and materializes/rolls back weights for
+# exactly the two Pods carrying that cell label.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: iocost-adapter
+  namespace: kube-system
+  labels:
+    app: iocost-adapter
+spec:
+  serviceAccountName: iocost-adapter
+  # Pinned by nodeName, not a hostname nodeSelector: this binds to the
+  # exact Node object the target record was collected from. If that Node
+  # is replaced (even under the same name), a fresh target record and a
+  # fresh render are required before re-applying.
+  nodeName: __NODE_NAME__
+  hostPID: false
+  hostNetwork: false
+  hostIPC: false
+  containers:
+    - name: iocost-adapter
+      image: {{ADAPTER_IMAGE}}
+      imagePullPolicy: Always
+      securityContext:
+        privileged: true
+        readOnlyRootFilesystem: true
+      env:
+        - name: IOI_MODE
+          value: "observe" # set to "enforce" + ACTIVE_CELL to materialize weights
+        - name: ACTIVE_CELL
+          value: ""
+        # No IOI_DEVICE: the adapter resolves the data-volume device
+        # dynamically at startup from DATA_MOUNT/ROOT_MOUNT/SYS_ROOT and
+        # fails closed (does not become Ready) if it cannot distinguish
+        # the data volume from the root volume, or if the device has no
+        # reviewed io.cost.model/io.cost.qos state yet.
+        - name: DATA_MOUNT
+          value: /host-mnt-kubelet
+        - name: ROOT_MOUNT
+          value: /host-root
+        - name: SYS_ROOT
+          value: /host-sys
+        - name: BASELINE_WEIGHT
+          value: "100"
+        - name: TARGET_NAMESPACE
+          value: {{TARGET_NAMESPACE}}
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+      ports:
+        - name: health
+          containerPort: 8080
+      readinessProbe:
+        httpGet:
+          path: /readyz
+          port: health
+        periodSeconds: 2
+        failureThreshold: 3
+      volumeMounts:
+        - name: cgroup
+          mountPath: /sys/fs/cgroup
+        - name: host-mnt-kubelet
+          mountPath: /host-mnt-kubelet
+          readOnly: true
+        - name: host-root
+          mountPath: /host-root
+          readOnly: true
+        - name: host-sys
+          mountPath: /host-sys
+          readOnly: true
+  volumes:
+    - name: cgroup
+      hostPath:
+        path: /sys/fs/cgroup
+        type: Directory
+    - name: host-mnt-kubelet
+      hostPath:
+        path: /mnt/kubelet
+        type: Directory
+    - name: host-root
+      hostPath:
+        path: /
+        type: Directory
+    - name: host-sys
+      hostPath:
+        path: /sys
+        type: Directory

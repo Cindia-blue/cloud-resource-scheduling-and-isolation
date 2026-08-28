@@ -1,0 +1,43 @@
+# Uses the stock, unmodified upstream kube-scheduler binary (not a custom
+# build) purely as a second, independently-run scheduler instance, opted
+# into only by Pods with spec.schedulerName: ioi-scheduler. It has no code
+# that touches io.weight/cgroups; that lives entirely in the node-local
+# iocost-adapter (../adapter-pod.yaml.tmpl). This never replaces, patches,
+# or restarts the cluster's real default scheduler. See README.md in this
+# directory: packaged, not validated by the completed causal experiment.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ioi-scheduler
+  namespace: kube-system
+  labels:
+    app: ioi-scheduler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ioi-scheduler
+  template:
+    metadata:
+      labels:
+        app: ioi-scheduler
+    spec:
+      serviceAccountName: ioi-scheduler
+      containers:
+        - name: ioi-scheduler
+          # Pin this to the kube-scheduler minor version matching your
+          # cluster's control plane.
+          image: registry.k8s.io/kube-scheduler:v1.34.9
+          command:
+            - kube-scheduler
+            - --config=/etc/ioi-scheduler/scheduler-config.yaml
+            - --leader-elect=false
+            - --secure-port=0
+            - --feature-gates=DynamicResourceAllocation=false
+          volumeMounts:
+            - name: config
+              mountPath: /etc/ioi-scheduler
+      volumes:
+        - name: config
+          configMap:
+            name: ioi-scheduler-config

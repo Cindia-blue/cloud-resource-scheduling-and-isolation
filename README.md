@@ -9,6 +9,23 @@ Contact: webadmin@linux.intel.com
 
 This repository hosts I/O Isolation and all of its build and dependent configuration files to deploy its components.
 
+## This fork: disk-only NOP IOCost application isolation
+
+The `cindy1-nop-iocost` branch of this fork is a from-scratch, disk-only
+rework: it replaces the historical `io.max` hard-throttle enforcement
+path with cgroup-v2 IOCost `io.weight`, and drops the network/RDT scope
+described below. It has been demonstrated end-to-end on one pre-qualified
+node per run — a real application-protection **mechanism**, not yet a
+validated placement/tenancy **product**. Start here:
+
+- [`docs/nop-iocost-application-isolation.md`](docs/nop-iocost-application-isolation.md) — installation and operations manual.
+- [`docs/architecture.md`](docs/architecture.md) — component boundaries and the validated causal chain.
+- [`docs/experiment-runbook.md`](docs/experiment-runbook.md) — the reproducible qualify → run → cleanup procedure.
+- [`docs/limitations.md`](docs/limitations.md) — what is demonstrated, what is packaged-but-unvalidated, and what is still an open product gate.
+
+The rest of this README describes the original, discontinued upstream
+project this fork descends from.
+
 ## Overall Architecture
 
 Resource IO Aware Scheduling and Isolation solution is an end-to-end solution that provides guaranteed I/O resources for critical workloads through I/O aware scheduling and I/O resource boundary enforcement in cloud native environments, it includes below components:
